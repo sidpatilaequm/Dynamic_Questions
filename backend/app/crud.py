@@ -69,6 +69,7 @@ def list_processes(db: Session) -> list[schemas.ProcessSummary]:
             name=p.name,
             description=p.description,
             status=p.status,
+            external_key=p.external_key,
             created_at=p.created_at,
             updated_at=p.updated_at,
             section_count=section_counts.get(p.id, 0),
