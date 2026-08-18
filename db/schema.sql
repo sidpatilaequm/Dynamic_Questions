@@ -47,19 +47,24 @@ CREATE TABLE IF NOT EXISTS sections (
 --
 --   short_text     free text answer          -> answers.text_value
 --   single_choice  pick exactly one option   -> one row in answer_options
+--                  (is_dropdown: render as <select> instead of radio buttons)
 --   multi_choice   pick one or more options  -> N rows in answer_options
+--   counter        a bounded integer         -> answers.text_value (stringified)
 -- ------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS questions (
   id              INT AUTO_INCREMENT PRIMARY KEY,
   section_id      INT           NOT NULL,
   prompt          TEXT          NOT NULL,
   help_text       VARCHAR(500)  NULL,
-  question_type   ENUM('short_text', 'single_choice', 'multi_choice') NOT NULL,
+  question_type   ENUM('short_text', 'single_choice', 'multi_choice', 'counter') NOT NULL,
   is_mandatory    TINYINT(1)    NOT NULL DEFAULT 0,
   position        INT           NOT NULL DEFAULT 0,
   max_length      INT           NULL,  -- short_text only
   min_selections  INT           NULL,  -- multi_choice only
   max_selections  INT           NULL,  -- multi_choice only
+  is_dropdown     TINYINT(1)    NOT NULL DEFAULT 0,  -- single_choice only
+  min_value       INT           NULL,  -- counter only
+  max_value       INT           NULL,  -- counter only
   CONSTRAINT fk_questions_section
     FOREIGN KEY (section_id) REFERENCES sections (id) ON DELETE CASCADE,
   KEY idx_questions_order (section_id, position)

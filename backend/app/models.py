@@ -23,6 +23,7 @@ class QuestionType(str, enum.Enum):
     short_text = "short_text"
     single_choice = "single_choice"
     multi_choice = "multi_choice"
+    counter = "counter"
 
 
 class ProcessStatus(str, enum.Enum):
@@ -100,6 +101,9 @@ class Question(Base):
     max_length: Mapped[int | None] = mapped_column(Integer)
     min_selections: Mapped[int | None] = mapped_column(Integer)
     max_selections: Mapped[int | None] = mapped_column(Integer)
+    is_dropdown: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    min_value: Mapped[int | None] = mapped_column(Integer)
+    max_value: Mapped[int | None] = mapped_column(Integer)
 
     section: Mapped[Section] = relationship(back_populates="questions")
     options: Mapped[list["QuestionOption"]] = relationship(

@@ -35,6 +35,9 @@ class QuestionIn(BaseModel):
     max_length: int | None = Field(default=None, ge=1, le=5000)
     min_selections: int | None = Field(default=None, ge=1)
     max_selections: int | None = Field(default=None, ge=1)
+    is_dropdown: bool = False
+    min_value: int | None = None
+    max_value: int | None = None
     options: list[OptionIn] = Field(default_factory=list)
 
     @field_validator("help_text")
@@ -47,6 +50,13 @@ class QuestionIn(BaseModel):
         if self.question_type == QuestionType.short_text:
             if self.options:
                 raise ValueError("A short answer question cannot carry options.")
+            return
+
+        if self.question_type == QuestionType.counter:
+            if self.options:
+                raise ValueError("A counter question cannot carry options.")
+            if self.min_value is not None and self.max_value is not None and self.min_value > self.max_value:
+                raise ValueError("The minimum cannot be larger than the maximum.")
             return
 
         labels = [o.label.strip() for o in self.options]
@@ -84,6 +94,9 @@ class QuestionOut(BaseModel):
     max_length: int | None
     min_selections: int | None
     max_selections: int | None
+    is_dropdown: bool
+    min_value: int | None
+    max_value: int | None
     options: list[OptionOut] = []
 
 

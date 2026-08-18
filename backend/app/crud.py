@@ -99,6 +99,19 @@ def apply_question_payload(question: models.Question, payload: schemas.QuestionI
         question.max_length = payload.max_length
         question.min_selections = None
         question.max_selections = None
+        question.is_dropdown = False
+        question.min_value = None
+        question.max_value = None
+        question.options = []
+        return
+
+    if payload.question_type == QuestionType.counter:
+        question.max_length = None
+        question.min_selections = None
+        question.max_selections = None
+        question.is_dropdown = False
+        question.min_value = payload.min_value
+        question.max_value = payload.max_value
         question.options = []
         return
 
@@ -109,6 +122,11 @@ def apply_question_payload(question: models.Question, payload: schemas.QuestionI
     question.max_selections = (
         payload.max_selections if payload.question_type == QuestionType.multi_choice else None
     )
+    question.is_dropdown = (
+        payload.is_dropdown if payload.question_type == QuestionType.single_choice else False
+    )
+    question.min_value = None
+    question.max_value = None
     question.options = [
         models.QuestionOption(label=opt.label.strip(), position=i)
         for i, opt in enumerate(payload.options)
@@ -152,6 +170,23 @@ def validate_submission(
                 continue
             if question.max_length and len(text) > question.max_length:
                 errors[key] = f"Keep this under {question.max_length} characters."
+            continue
+
+        if question.question_type == QuestionType.counter:
+            text = (answer.text_value or "").strip() if answer else ""
+            if not text:
+                if question.is_mandatory:
+                    errors[key] = "This question needs a value."
+                continue
+            try:
+                value = int(text)
+            except ValueError:
+                errors[key] = "This needs to be a whole number."
+                continue
+            if question.min_value is not None and value < question.min_value:
+                errors[key] = f"Must be at least {question.min_value}."
+            elif question.max_value is not None and value > question.max_value:
+                errors[key] = f"Must be at most {question.max_value}."
             continue
 
         valid_option_ids = {o.id for o in question.options}
@@ -200,7 +235,7 @@ def store_submission(
         text = (incoming.text_value or "").strip() or None
         chosen = list(dict.fromkeys(incoming.option_ids))
 
-        if question.question_type == QuestionType.short_text:
+        if question.question_type in (QuestionType.short_text, QuestionType.counter):
             if text is None:
                 continue
             response.answers.append(

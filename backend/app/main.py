@@ -118,6 +118,7 @@ def update_process(process_id: int, payload: schemas.ProcessIn, db: Session = De
 @app.delete("/api/processes/{process_id}", status_code=204, tags=["processes"])
 def delete_process(process_id: int, db: Session = Depends(get_db)):
     process = load_process(db, process_id)
+    require_unlocked(db, process_id)
     db.delete(process)
     db.commit()
 
@@ -182,6 +183,11 @@ def activate_process(process_id: int, key: str, db: Session = Depends(get_db)):
     ).scalar_one_or_none()
     if previous and previous.id != process.id:
         previous.external_key = None
+        # Flushed on its own, ahead of the new holder's update below — otherwise SQLAlchemy
+        # batches both UPDATEs into one round trip and MySQL can evaluate the unique constraint
+        # on processes.external_key before this row's clear has actually landed, raising a
+        # spurious duplicate-key error even though the end state is perfectly valid.
+        db.flush()
 
     process.external_key = key
     db.commit()
