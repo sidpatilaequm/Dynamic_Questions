@@ -9,6 +9,7 @@ from sqlalchemy import (
     Enum,
     ForeignKey,
     Integer,
+    JSON,
     String,
     Text,
     UniqueConstraint,
@@ -24,6 +25,13 @@ class QuestionType(str, enum.Enum):
     single_choice = "single_choice"
     multi_choice = "multi_choice"
     counter = "counter"
+    table = "table"
+
+
+class ColumnType(str, enum.Enum):
+    text = "text"
+    number = "number"
+    date = "date"
 
 
 class ProcessStatus(str, enum.Enum):
@@ -104,12 +112,19 @@ class Question(Base):
     is_dropdown: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     min_value: Mapped[int | None] = mapped_column(Integer)
     max_value: Mapped[int | None] = mapped_column(Integer)
+    min_rows: Mapped[int | None] = mapped_column(Integer)
+    max_rows: Mapped[int | None] = mapped_column(Integer)
 
     section: Mapped[Section] = relationship(back_populates="questions")
     options: Mapped[list["QuestionOption"]] = relationship(
         back_populates="question",
         cascade="all, delete-orphan",
         order_by="QuestionOption.position",
+    )
+    columns: Mapped[list["QuestionColumn"]] = relationship(
+        back_populates="question",
+        cascade="all, delete-orphan",
+        order_by="QuestionColumn.position",
     )
 
 
@@ -124,6 +139,28 @@ class QuestionOption(Base):
     position: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
     question: Mapped[Question] = relationship(back_populates="options")
+
+
+class QuestionColumn(Base):
+    """One column definition for a `table`-type question — the respondent fills in
+    one row at a time, each row supplying a value per column (see Answer.table_rows)."""
+
+    __tablename__ = "question_columns"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    question_id: Mapped[int] = mapped_column(
+        ForeignKey("questions.id", ondelete="CASCADE"), nullable=False
+    )
+    label: Mapped[str] = mapped_column(String(300), nullable=False)
+    column_type: Mapped[ColumnType] = mapped_column(
+        Enum(ColumnType, values_callable=lambda e: [m.value for m in e]),
+        nullable=False,
+        default=ColumnType.text,
+    )
+    is_required: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    position: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+    question: Mapped[Question] = relationship(back_populates="columns")
 
 
 class Response(Base):
@@ -155,6 +192,10 @@ class Answer(Base):
         ForeignKey("questions.id", ondelete="CASCADE"), nullable=False
     )
     text_value: Mapped[str | None] = mapped_column(Text)
+    # table-type answers only: list of rows, each row a {column_id (as str): cell value}
+    # dict — keyed by column id rather than position so a later column reorder/rename
+    # can't silently misalign already-stored answers with the wrong column.
+    table_rows: Mapped[list | None] = mapped_column(JSON)
 
     response: Mapped[Response] = relationship(back_populates="answers")
     question: Mapped[Question] = relationship()

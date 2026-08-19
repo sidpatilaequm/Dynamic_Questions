@@ -4,7 +4,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from .models import ProcessStatus, QuestionType
+from .models import ColumnType, ProcessStatus, QuestionType
 
 ORM = ConfigDict(from_attributes=True)
 
@@ -25,6 +25,25 @@ class OptionOut(BaseModel):
 
 
 # --------------------------------------------------------------------
+# Table columns
+# --------------------------------------------------------------------
+class ColumnIn(BaseModel):
+    label: str = Field(min_length=1, max_length=300)
+    column_type: ColumnType = ColumnType.text
+    is_required: bool = False
+
+
+class ColumnOut(BaseModel):
+    model_config = ORM
+
+    id: int
+    label: str
+    column_type: ColumnType
+    is_required: bool
+    position: int
+
+
+# --------------------------------------------------------------------
 # Questions
 # --------------------------------------------------------------------
 class QuestionIn(BaseModel):
@@ -38,7 +57,10 @@ class QuestionIn(BaseModel):
     is_dropdown: bool = False
     min_value: int | None = None
     max_value: int | None = None
+    min_rows: int | None = Field(default=None, ge=1, le=200)
+    max_rows: int | None = Field(default=None, ge=1, le=200)
     options: list[OptionIn] = Field(default_factory=list)
+    columns: list[ColumnIn] = Field(default_factory=list)
 
     @field_validator("help_text")
     @classmethod
@@ -57,6 +79,16 @@ class QuestionIn(BaseModel):
                 raise ValueError("A counter question cannot carry options.")
             if self.min_value is not None and self.max_value is not None and self.min_value > self.max_value:
                 raise ValueError("The minimum cannot be larger than the maximum.")
+            return
+
+        if self.question_type == QuestionType.table:
+            labels = [c.label.strip() for c in self.columns]
+            if len(labels) < 1:
+                raise ValueError("Give this table at least one column.")
+            if len({label.lower() for label in labels}) != len(labels):
+                raise ValueError("Two columns have the same heading.")
+            if self.min_rows is not None and self.max_rows is not None and self.min_rows > self.max_rows:
+                raise ValueError("The fewest rows cannot be more than the most rows.")
             return
 
         labels = [o.label.strip() for o in self.options]
@@ -97,7 +129,10 @@ class QuestionOut(BaseModel):
     is_dropdown: bool
     min_value: int | None
     max_value: int | None
+    min_rows: int | None
+    max_rows: int | None
     options: list[OptionOut] = []
+    columns: list[ColumnOut] = []
 
 
 # --------------------------------------------------------------------
@@ -182,6 +217,9 @@ class AnswerIn(BaseModel):
     question_id: int
     text_value: str | None = None
     option_ids: list[int] = Field(default_factory=list)
+    # table-type only: one dict per row, keyed by column id (as a string, since
+    # JSON object keys are always strings) -> the cell value typed in for that column.
+    rows: list[dict[str, str]] = Field(default_factory=list)
 
 
 class ResponseIn(BaseModel):
@@ -197,6 +235,11 @@ class AnswerOut(BaseModel):
     is_mandatory: bool
     text_value: str | None = None
     selected_labels: list[str] = []
+    # table-type only: each row's cell values, keyed by column label (not column id
+    # -- this is a read model for display/export, so it should stay legible even
+    # after a column is later deleted) alongside the current column headings.
+    rows: list[dict[str, str]] = []
+    column_labels: list[str] = []
 
 
 class ResponseOut(BaseModel):

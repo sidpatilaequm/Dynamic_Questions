@@ -1,10 +1,33 @@
 """Query helpers and the rules that decide whether a submission is complete."""
 
+import datetime as _datetime
+
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
 from . import models, schemas
-from .models import QuestionType
+from .models import ColumnType, QuestionType
+
+
+def _plural(n: int, word: str) -> str:
+    return f"{n} {word}{'' if n == 1 else 's'}"
+
+
+def _cell_is_valid(column_type: ColumnType, value: str) -> bool:
+    value = value.strip()
+    if column_type == ColumnType.number:
+        try:
+            float(value)
+            return True
+        except ValueError:
+            return False
+    if column_type == ColumnType.date:
+        try:
+            _datetime.date.fromisoformat(value)
+            return True
+        except ValueError:
+            return False
+    return True
 
 
 # --------------------------------------------------------------------
@@ -17,7 +40,10 @@ def get_process(db: Session, process_id: int) -> models.Process | None:
         .options(
             selectinload(models.Process.sections)
             .selectinload(models.Section.questions)
-            .selectinload(models.Question.options)
+            .selectinload(models.Question.options),
+            selectinload(models.Process.sections)
+            .selectinload(models.Section.questions)
+            .selectinload(models.Question.columns),
         )
         # The session keeps objects alive after commit (expire_on_commit=False),
         # so ask the loader to overwrite what it already holds. Without this a
@@ -102,7 +128,10 @@ def apply_question_payload(question: models.Question, payload: schemas.QuestionI
         question.is_dropdown = False
         question.min_value = None
         question.max_value = None
+        question.min_rows = None
+        question.max_rows = None
         question.options = []
+        question.columns = []
         return
 
     if payload.question_type == QuestionType.counter:
@@ -112,7 +141,36 @@ def apply_question_payload(question: models.Question, payload: schemas.QuestionI
         question.is_dropdown = False
         question.min_value = payload.min_value
         question.max_value = payload.max_value
+        question.min_rows = None
+        question.max_rows = None
         question.options = []
+        question.columns = []
+        return
+
+    if payload.question_type == QuestionType.table:
+        question.max_length = None
+        question.min_selections = None
+        question.max_selections = None
+        question.is_dropdown = False
+        question.min_value = None
+        question.max_value = None
+        question.min_rows = payload.min_rows
+        question.max_rows = payload.max_rows
+        question.options = []
+        # Reuse a column's id when its label is unchanged, so answers already
+        # recorded against it (keyed by column id — see Answer.table_rows) stay
+        # pointed at the right column instead of silently going stale.
+        existing = {c.label: c.id for c in question.columns}
+        question.columns = [
+            models.QuestionColumn(
+                id=existing.get(col.label.strip()),
+                label=col.label.strip(),
+                column_type=col.column_type,
+                is_required=col.is_required,
+                position=i,
+            )
+            for i, col in enumerate(payload.columns)
+        ]
         return
 
     question.max_length = None
@@ -127,10 +185,13 @@ def apply_question_payload(question: models.Question, payload: schemas.QuestionI
     )
     question.min_value = None
     question.max_value = None
+    question.min_rows = None
+    question.max_rows = None
     question.options = [
         models.QuestionOption(label=opt.label.strip(), position=i)
         for i, opt in enumerate(payload.options)
     ]
+    question.columns = []
 
 
 # --------------------------------------------------------------------
@@ -189,6 +250,46 @@ def validate_submission(
                 errors[key] = f"Must be at most {question.max_value}."
             continue
 
+        if question.question_type == QuestionType.table:
+            all_rows = answer.rows if answer else []
+            rows = [row for row in all_rows if any(v.strip() for v in row.values())]
+
+            if not rows:
+                if question.is_mandatory or question.min_rows:
+                    floor = question.min_rows or 1
+                    errors[key] = f"Add at least {_plural(floor, 'row')}."
+                continue
+            if question.min_rows and len(rows) < question.min_rows:
+                errors[key] = f"Add at least {question.min_rows} rows."
+                continue
+            if question.max_rows and len(rows) > question.max_rows:
+                errors[key] = f"Use no more than {question.max_rows} rows."
+                continue
+
+            bad_row = None
+            for index, row in enumerate(rows):
+                missing = [
+                    c.label for c in question.columns
+                    if c.is_required and not row.get(str(c.id), "").strip()
+                ]
+                if missing:
+                    bad_row = f"Row {index + 1} still needs: {', '.join(missing)}."
+                    break
+                bad_col = next(
+                    (
+                        c for c in question.columns
+                        if row.get(str(c.id), "").strip() and not _cell_is_valid(c.column_type, row[str(c.id)])
+                    ),
+                    None,
+                )
+                if bad_col:
+                    kind = "number" if bad_col.column_type == ColumnType.number else "date"
+                    bad_row = f"Row {index + 1}: {bad_col.label} takes a {kind}."
+                    break
+            if bad_row:
+                errors[key] = bad_row
+            continue
+
         valid_option_ids = {o.id for o in question.options}
         chosen = list(dict.fromkeys(answer.option_ids)) if answer else []
 
@@ -243,6 +344,18 @@ def store_submission(
             )
             continue
 
+        if question.question_type == QuestionType.table:
+            rows = [row for row in incoming.rows if any(v.strip() for v in row.values())]
+            if not rows:
+                continue
+            response.answers.append(
+                models.Answer(
+                    question_id=question.id,
+                    table_rows=[{k: v.strip() for k, v in row.items()} for row in rows],
+                )
+            )
+            continue
+
         if not chosen:
             continue
         answer = models.Answer(question_id=question.id)
@@ -270,6 +383,7 @@ def serialize_response(
     for qid in ordered_ids:
         question = questions[qid]
         answer = by_question.get(qid)
+        column_labels = {str(c.id): c.label for c in question.columns}
         answers.append(
             schemas.AnswerOut(
                 question_id=qid,
@@ -282,6 +396,15 @@ def serialize_response(
                     if answer
                     else []
                 ),
+                rows=(
+                    [
+                        {column_labels.get(cid, "(removed)"): value for cid, value in row.items()}
+                        for row in (answer.table_rows or [])
+                    ]
+                    if answer
+                    else []
+                ),
+                column_labels=[c.label for c in question.columns],
             )
         )
 

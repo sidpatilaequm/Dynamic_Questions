@@ -56,7 +56,7 @@ CREATE TABLE IF NOT EXISTS questions (
   section_id      INT           NOT NULL,
   prompt          TEXT          NOT NULL,
   help_text       VARCHAR(500)  NULL,
-  question_type   ENUM('short_text', 'single_choice', 'multi_choice', 'counter') NOT NULL,
+  question_type   ENUM('short_text', 'single_choice', 'multi_choice', 'counter', 'table') NOT NULL,
   is_mandatory    TINYINT(1)    NOT NULL DEFAULT 0,
   position        INT           NOT NULL DEFAULT 0,
   max_length      INT           NULL,  -- short_text only
@@ -65,6 +65,8 @@ CREATE TABLE IF NOT EXISTS questions (
   is_dropdown     TINYINT(1)    NOT NULL DEFAULT 0,  -- single_choice only
   min_value       INT           NULL,  -- counter only
   max_value       INT           NULL,  -- counter only
+  min_rows        INT           NULL,  -- table only
+  max_rows        INT           NULL,  -- table only
   CONSTRAINT fk_questions_section
     FOREIGN KEY (section_id) REFERENCES sections (id) ON DELETE CASCADE,
   KEY idx_questions_order (section_id, position)
@@ -84,6 +86,22 @@ CREATE TABLE IF NOT EXISTS question_options (
 ) ENGINE = InnoDB;
 
 -- ------------------------------------------------------------
+-- Column definitions for table-type questions. The respondent fills in one
+-- row at a time; each row supplies a value per column (see answers.table_rows).
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS question_columns (
+  id            INT AUTO_INCREMENT PRIMARY KEY,
+  question_id   INT            NOT NULL,
+  label         VARCHAR(300)   NOT NULL,
+  column_type   ENUM('text', 'number', 'date') NOT NULL DEFAULT 'text',
+  is_required   TINYINT(1)     NOT NULL DEFAULT 0,
+  position      INT            NOT NULL DEFAULT 0,
+  CONSTRAINT fk_columns_question
+    FOREIGN KEY (question_id) REFERENCES questions (id) ON DELETE CASCADE,
+  KEY idx_columns_order (question_id, position)
+) ENGINE = InnoDB;
+
+-- ------------------------------------------------------------
 -- One row per completed submission of a process.
 -- ------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS responses (
@@ -98,14 +116,16 @@ CREATE TABLE IF NOT EXISTS responses (
 ) ENGINE = InnoDB;
 
 -- ------------------------------------------------------------
--- One row per answered question. text_value holds short_text answers;
--- choice answers hang off answer_options below.
+-- One row per answered question. text_value holds short_text/counter
+-- answers; choice answers hang off answer_options below; table_rows holds
+-- table-type answers as a JSON list of {column_id (as string): cell value}.
 -- ------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS answers (
   id           INT AUTO_INCREMENT PRIMARY KEY,
   response_id  INT   NOT NULL,
   question_id  INT   NOT NULL,
   text_value   TEXT  NULL,
+  table_rows   JSON  NULL,
   CONSTRAINT fk_answers_response
     FOREIGN KEY (response_id) REFERENCES responses (id) ON DELETE CASCADE,
   CONSTRAINT fk_answers_question

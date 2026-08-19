@@ -152,9 +152,23 @@ def duplicate_process(process_id: int, db: Session = Depends(get_db)):
                     max_length=question.max_length,
                     min_selections=question.min_selections,
                     max_selections=question.max_selections,
+                    is_dropdown=question.is_dropdown,
+                    min_value=question.min_value,
+                    max_value=question.max_value,
+                    min_rows=question.min_rows,
+                    max_rows=question.max_rows,
                     options=[
                         models.QuestionOption(label=o.label, position=o.position)
                         for o in question.options
+                    ],
+                    columns=[
+                        models.QuestionColumn(
+                            label=c.label,
+                            column_type=c.column_type,
+                            is_required=c.is_required,
+                            position=c.position,
+                        )
+                        for c in question.columns
                     ],
                 )
             )
