@@ -62,6 +62,8 @@ export const api = {
   updateProcess: (id, body) => request(`/processes/${id}`, { method: 'PUT', body }),
   deleteProcess: (id) => request(`/processes/${id}`, { method: 'DELETE' }),
   duplicateProcess: (id) => request(`/processes/${id}/duplicate`, { method: 'POST' }),
+  activateProcess: (id, key) =>
+    request(`/processes/${id}/activate?key=${encodeURIComponent(key)}`, { method: 'PATCH' }),
 
   createSection: (processId, body) =>
     request(`/processes/${processId}/sections`, { method: 'POST', body }),

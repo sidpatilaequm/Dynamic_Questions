@@ -7,6 +7,11 @@ const STATUS_COPY = {
   closed: 'Closed',
 };
 
+// The only integration this Form Studio actually feeds today — see backend_java's
+// questionnaire.external-key.supplier-registration property. Whichever process holds this key
+// is the one live applicants see on the Become-a-Supplier form.
+const SUPPLIER_KEY = 'become_a_supplier';
+
 export default function ProcessList({ onOpen }) {
   const [processes, setProcesses] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -51,6 +56,21 @@ export default function ProcessList({ onOpen }) {
     try {
       const copy = await api.duplicateProcess(id);
       onOpen(copy.id, 'build');
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
+  const activate = async (process) => {
+    if (
+      !window.confirm(
+        `Make "${process.name}" the live Become-a-Supplier form? New applicants will see this one immediately; whichever process is currently live will stop being shown.`,
+      )
+    )
+      return;
+    try {
+      await api.activateProcess(process.id, SUPPLIER_KEY);
+      load();
     } catch (err) {
       setError(err.message);
     }
@@ -113,7 +133,12 @@ export default function ProcessList({ onOpen }) {
         <ul className="grid">
           {processes.map((process) => (
             <li key={process.id} className="card process-card">
-              <div className={`chip chip--${process.status}`}>{STATUS_COPY[process.status]}</div>
+              <div className="row-actions" style={{ marginBottom: '4px' }}>
+                <div className={`chip chip--${process.status}`}>{STATUS_COPY[process.status]}</div>
+                {process.external_key === SUPPLIER_KEY && (
+                  <div className="chip chip--published">Live — Become-a-Supplier</div>
+                )}
+              </div>
               <h2 className="process-card__name">{process.name}</h2>
               {process.description && <p className="muted clamp">{process.description}</p>}
 
@@ -142,6 +167,11 @@ export default function ProcessList({ onOpen }) {
                 <button className="btn btn--ghost" onClick={() => duplicate(process.id)}>
                   Duplicate
                 </button>
+                {process.status === 'published' && process.external_key !== SUPPLIER_KEY && (
+                  <button className="btn btn--primary" onClick={() => activate(process)}>
+                    Make live
+                  </button>
+                )}
                 <button className="btn btn--danger" onClick={() => remove(process)}>
                   Delete
                 </button>

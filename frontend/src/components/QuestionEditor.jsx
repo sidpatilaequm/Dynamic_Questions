@@ -31,7 +31,7 @@ function initialDraft(question) {
   };
 }
 
-export default function QuestionEditor({ question, busy, onSave, onCancel }) {
+export default function QuestionEditor({ question, locked, busy, onSave, onCancel }) {
   const [draft, setDraft] = useState(() => initialDraft(question));
   const [problem, setProblem] = useState(null);
   const lastOptionRef = useRef(null);
@@ -39,6 +39,9 @@ export default function QuestionEditor({ question, busy, onSave, onCancel }) {
   const set = (patch) => setDraft((d) => ({ ...d, ...patch }));
   const isChoice = draft.question_type !== 'short_text';
   const isMulti = draft.question_type === 'multi_choice';
+  // Only the new-question path is affected — editing an existing question is already blocked
+  // entirely upstream (Builder only renders this editor for a new question while locked).
+  const mandatoryBlocked = locked && !question;
 
   const setOption = (key, label) =>
     set({ options: draft.options.map((o) => (o.key === key ? { ...o, label } : o)) });
@@ -59,6 +62,9 @@ export default function QuestionEditor({ question, busy, onSave, onCancel }) {
   /** Mirrors the checks the API runs, so problems surface before the round trip. */
   const validate = () => {
     if (!draft.prompt.trim()) return 'Write the question itself.';
+    if (mandatoryBlocked && draft.is_mandatory) {
+      return "This process already has recorded responses, so a brand-new question can't be marked mandatory — existing respondents were never shown it and can't retroactively answer it. Add it as optional, or duplicate the process if this must be required going forward.";
+    }
     if (!isChoice) return null;
 
     const labels = draft.options.map((o) => o.label.trim()).filter(Boolean);
@@ -149,6 +155,7 @@ export default function QuestionEditor({ question, busy, onSave, onCancel }) {
         <input
           type="checkbox"
           checked={draft.is_mandatory}
+          disabled={mandatoryBlocked}
           onChange={(e) => set({ is_mandatory: e.target.checked })}
         />
         <span>
@@ -159,6 +166,12 @@ export default function QuestionEditor({ question, busy, onSave, onCancel }) {
           </span>
         </span>
       </label>
+      {mandatoryBlocked && (
+        <p className="muted">
+          Can't be mandatory — this form already has responses, and existing respondents were
+          never shown this question.
+        </p>
+      )}
 
       {!isChoice && (
         <label className="field field--narrow">

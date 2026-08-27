@@ -76,7 +76,7 @@ export default function QuestionCard({
             title="Move up"
             aria-label="Move question up"
             onClick={() => onMove(-1)}
-            disabled={locked || busy || isFirst}
+            disabled={busy || isFirst}
           >
             ↑
           </button>
@@ -85,7 +85,7 @@ export default function QuestionCard({
             title="Move down"
             aria-label="Move question down"
             onClick={() => onMove(1)}
-            disabled={locked || busy || isLast}
+            disabled={busy || isLast}
           >
             ↓
           </button>
@@ -94,7 +94,7 @@ export default function QuestionCard({
             <select
               className="select select--tiny"
               value=""
-              disabled={locked || busy}
+              disabled={busy}
               aria-label="Move question to another section"
               onChange={(e) => e.target.value && onMoveToSection(e.target.value)}
             >

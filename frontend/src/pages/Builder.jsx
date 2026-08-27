@@ -101,10 +101,11 @@ export default function Builder({ process, setProcess, onDuplicate }) {
       {locked && (
         <div className="banner">
           <div>
-            <p className="banner__title">Questions are locked</p>
+            <p className="banner__title">{process.response_count} response(s) are stored against this form</p>
             <p className="muted">
-              {process.response_count} response(s) are stored against this form. Changing the
-              questions now would break them. Duplicate the process to carry on editing.
+              You can still add sections and questions, and reorder or move existing ones — but
+              editing or deleting an existing question, or deleting a section, would break those
+              stored answers. Duplicate the process if you need to change what's already there.
             </p>
           </div>
           <button className="btn btn--primary" onClick={onDuplicate}>
@@ -140,7 +141,7 @@ export default function Builder({ process, setProcess, onDuplicate }) {
                   className="icon-btn"
                   title="Move section up"
                   aria-label="Move section up"
-                  disabled={locked || busy || sIndex === 0}
+                  disabled={busy || sIndex === 0}
                   onClick={() => moveSection(sIndex, -1)}
                 >
                   ↑
@@ -149,7 +150,7 @@ export default function Builder({ process, setProcess, onDuplicate }) {
                   className="icon-btn"
                   title="Move section down"
                   aria-label="Move section down"
-                  disabled={locked || busy || sIndex === process.sections.length - 1}
+                  disabled={busy || sIndex === process.sections.length - 1}
                   onClick={() => moveSection(sIndex, 1)}
                 >
                   ↓
@@ -195,6 +196,7 @@ export default function Builder({ process, setProcess, onDuplicate }) {
                     {isEditing ? (
                       <QuestionEditor
                         question={question}
+                        locked={locked}
                         busy={busy}
                         onSave={saveQuestion}
                         onCancel={() => setEditing(null)}
@@ -223,6 +225,7 @@ export default function Builder({ process, setProcess, onDuplicate }) {
             {addingHere ? (
               <QuestionEditor
                 question={null}
+                locked={locked}
                 busy={busy}
                 onSave={saveQuestion}
                 onCancel={() => setEditing(null)}
@@ -230,7 +233,7 @@ export default function Builder({ process, setProcess, onDuplicate }) {
             ) : (
               <button
                 className="btn btn--dashed"
-                disabled={locked || busy}
+                disabled={busy}
                 onClick={() => setEditing({ sectionId: section.id, question: null })}
               >
                 + Add a question to {section.title}
@@ -240,7 +243,7 @@ export default function Builder({ process, setProcess, onDuplicate }) {
         );
       })}
 
-      <button className="btn btn--dashed btn--wide" disabled={locked || busy} onClick={addSection}>
+      <button className="btn btn--dashed btn--wide" disabled={busy} onClick={addSection}>
         + Add a section
       </button>
     </div>

@@ -218,8 +218,10 @@ def activate_process(process_id: int, key: str, db: Session = Depends(get_db)):
     tags=["sections"],
 )
 def create_section(process_id: int, payload: schemas.SectionIn, db: Session = Depends(get_db)):
+    # Adding a section is additive — nothing about it can misalign an already-stored answer,
+    # so it stays allowed even once responses exist. Only edits that touch an *existing*
+    # question/section (delete_section, update_question, delete_question) stay locked below.
     load_process(db, process_id)
-    require_unlocked(db, process_id)
     db.add(
         models.Section(
             process_id=process_id,
@@ -283,7 +285,8 @@ def reorder_sections(
     process_id: int, payload: schemas.SectionOrderIn, db: Session = Depends(get_db)
 ):
     process = load_process(db, process_id)
-    require_unlocked(db, process_id)
+    # Reordering doesn't touch any question/option id, so it can't misalign a stored answer —
+    # allowed even once responses exist, same reasoning as create_section above.
 
     known = {s.id: s for s in process.sections}
     if set(payload.section_ids) != set(known):
@@ -310,7 +313,17 @@ def create_question(
     section = db.get(models.Section, section_id)
     if section is None:
         raise HTTPException(404, "That section no longer exists.")
-    require_unlocked(db, section.process_id)
+    # A brand-new question is additive — safe to add even once responses exist, unlike editing
+    # or deleting one. It just can't be *mandatory*: existing respondents were never shown it
+    # and can't retroactively answer it, so requiring it would permanently strand their answers
+    # as "incomplete" with no way to fix that.
+    if payload.is_mandatory and crud.count_responses(db, section.process_id):
+        raise bad_request(
+            "This process already has recorded responses, so a brand-new question can't be "
+            "marked mandatory — existing respondents were never shown it and can't retroactively "
+            "answer it. Add it as optional, or duplicate the process if this must be required "
+            "going forward."
+        )
 
     try:
         payload.check_shape()
@@ -402,7 +415,9 @@ def reorder_questions(
     if section is None:
         raise HTTPException(404, "That section no longer exists.")
     process_id = section.process_id
-    require_unlocked(db, process_id)
+    # Reordering/moving a question between sections never touches its id, options, or column
+    # ids — nothing a stored answer references changes — so it stays allowed even once responses
+    # exist, same reasoning as the other structural moves above.
 
     process = load_process(db, process_id)
     in_process = {q.id: q for s in process.sections for q in s.questions}
