@@ -63,6 +63,11 @@ class QuestionIn(BaseModel):
     max_rows: int | None = Field(default=None, ge=1, le=200)
     options: list[OptionIn] = Field(default_factory=list)
     columns: list[ColumnIn] = Field(default_factory=list)
+    # Conditional visibility — both set together or both left None. Cross-referential checks
+    # (the target question exists, is single_choice, isn't this question itself, and the option
+    # actually belongs to it) need DB access, so those live in main.py's endpoint, not here.
+    depends_on_question_id: int | None = None
+    depends_on_option_id: int | None = None
 
     @field_validator("help_text")
     @classmethod
@@ -71,9 +76,17 @@ class QuestionIn(BaseModel):
 
     def check_shape(self) -> None:
         """Rules a question definition has to satisfy. Raises ValueError."""
+        if (self.depends_on_question_id is None) != (self.depends_on_option_id is None):
+            raise ValueError("A conditional question needs both a question and an option to depend on.")
+
         if self.question_type == QuestionType.short_text:
             if self.options:
                 raise ValueError("A short answer question cannot carry options.")
+            return
+
+        if self.question_type == QuestionType.file_upload:
+            if self.options:
+                raise ValueError("A file upload question cannot carry options.")
             return
 
         if self.question_type == QuestionType.counter:
@@ -145,6 +158,8 @@ class QuestionOut(BaseModel):
     max_rows: int | None
     options: list[OptionOut] = []
     columns: list[ColumnOut] = []
+    depends_on_question_id: int | None = None
+    depends_on_option_id: int | None = None
 
 
 # --------------------------------------------------------------------

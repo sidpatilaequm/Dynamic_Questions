@@ -13,6 +13,19 @@ def _plural(n: int, word: str) -> str:
     return f"{n} {word}{'' if n == 1 else 's'}"
 
 
+def _question_is_visible(question: "models.Question", submitted: dict[int, "schemas.AnswerIn"]) -> bool:
+    """A question with no depends_on_* is always visible. Otherwise it's only visible when the
+    respondent picked depends_on_option_id on depends_on_question_id — same rule the frontends
+    use to decide whether to render it at all, checked again here since the API can't trust the
+    client to have actually hidden it."""
+    if question.depends_on_question_id is None:
+        return True
+    dep_answer = submitted.get(question.depends_on_question_id)
+    if dep_answer is None:
+        return False
+    return question.depends_on_option_id in dep_answer.option_ids
+
+
 def _cell_is_valid(column: "models.QuestionColumn", value: str) -> bool:
     value = value.strip()
     if column.column_type == ColumnType.number:
@@ -122,9 +135,24 @@ def apply_question_payload(question: models.Question, payload: schemas.QuestionI
     question.help_text = payload.help_text
     question.question_type = payload.question_type
     question.is_mandatory = payload.is_mandatory
+    question.depends_on_question_id = payload.depends_on_question_id
+    question.depends_on_option_id = payload.depends_on_option_id
 
     if payload.question_type == QuestionType.short_text:
         question.max_length = payload.max_length
+        question.min_selections = None
+        question.max_selections = None
+        question.is_dropdown = False
+        question.min_value = None
+        question.max_value = None
+        question.min_rows = None
+        question.max_rows = None
+        question.options = []
+        question.columns = []
+        return
+
+    if payload.question_type == QuestionType.file_upload:
+        question.max_length = None
         question.min_selections = None
         question.max_selections = None
         question.is_dropdown = False
@@ -229,6 +257,11 @@ def validate_submission(
         answer = submitted.get(qid)
         key = str(qid)
 
+        if not _question_is_visible(question, submitted):
+            # Never on the form as far as the respondent could tell — not required, and
+            # whatever (if anything) was submitted for it is simply ignored, not validated.
+            continue
+
         if question.question_type == QuestionType.short_text:
             text = (answer.text_value or "").strip() if answer else ""
             if not text:
@@ -237,6 +270,12 @@ def validate_submission(
                 continue
             if question.max_length and len(text) > question.max_length:
                 errors[key] = f"Keep this under {question.max_length} characters."
+            continue
+
+        if question.question_type == QuestionType.file_upload:
+            text = (answer.text_value or "").strip() if answer else ""
+            if not text and question.is_mandatory:
+                errors[key] = "Upload a file for this question."
             continue
 
         if question.question_type == QuestionType.counter:
@@ -335,6 +374,7 @@ def store_submission(
     db: Session, process: models.Process, payload: schemas.ResponseIn
 ) -> models.Response:
     questions = {q.id: q for s in process.sections for q in s.questions}
+    submitted = {a.question_id: a for a in payload.answers}
 
     response = models.Response(
         process_id=process.id,
@@ -344,10 +384,12 @@ def store_submission(
 
     for incoming in payload.answers:
         question = questions[incoming.question_id]
+        if not _question_is_visible(question, submitted):
+            continue
         text = (incoming.text_value or "").strip() or None
         chosen = list(dict.fromkeys(incoming.option_ids))
 
-        if question.question_type in (QuestionType.short_text, QuestionType.counter):
+        if question.question_type in (QuestionType.short_text, QuestionType.counter, QuestionType.file_upload):
             if text is None:
                 continue
             response.answers.append(

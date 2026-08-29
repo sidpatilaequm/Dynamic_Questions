@@ -26,6 +26,7 @@ class QuestionType(str, enum.Enum):
     multi_choice = "multi_choice"
     counter = "counter"
     table = "table"
+    file_upload = "file_upload"
 
 
 class ColumnType(str, enum.Enum):
@@ -115,12 +116,27 @@ class Question(Base):
     max_value: Mapped[int | None] = mapped_column(Integer)
     min_rows: Mapped[int | None] = mapped_column(Integer)
     max_rows: Mapped[int | None] = mapped_column(Integer)
+    # Conditional visibility: this question only counts as "on the form" when the respondent
+    # picked depends_on_option_id on depends_on_question_id (a single_choice question). Both
+    # null (the default) means always visible. ON DELETE SET NULL rather than CASCADE: deleting
+    # the question/option this depends on should fall back to "always visible", not silently
+    # delete an unrelated question along with it.
+    depends_on_question_id: Mapped[int | None] = mapped_column(
+        ForeignKey("questions.id", ondelete="SET NULL")
+    )
+    depends_on_option_id: Mapped[int | None] = mapped_column(
+        ForeignKey("question_options.id", ondelete="SET NULL")
+    )
 
     section: Mapped[Section] = relationship(back_populates="questions")
+    # foreign_keys explicit: depends_on_option_id is a second FK path between questions and
+    # question_options (pointing the other way — "which option this question depends on"), which
+    # would otherwise make SQLAlchemy unable to infer which FK this relationship should join on.
     options: Mapped[list["QuestionOption"]] = relationship(
         back_populates="question",
         cascade="all, delete-orphan",
         order_by="QuestionOption.position",
+        foreign_keys="QuestionOption.question_id",
     )
     columns: Mapped[list["QuestionColumn"]] = relationship(
         back_populates="question",
@@ -139,7 +155,7 @@ class QuestionOption(Base):
     label: Mapped[str] = mapped_column(String(300), nullable=False)
     position: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
-    question: Mapped[Question] = relationship(back_populates="options")
+    question: Mapped[Question] = relationship(back_populates="options", foreign_keys=[question_id])
 
 
 class QuestionColumn(Base):

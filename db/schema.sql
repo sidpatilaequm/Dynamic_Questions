@@ -56,7 +56,7 @@ CREATE TABLE IF NOT EXISTS questions (
   section_id      INT           NOT NULL,
   prompt          TEXT          NOT NULL,
   help_text       VARCHAR(500)  NULL,
-  question_type   ENUM('short_text', 'single_choice', 'multi_choice', 'counter', 'table') NOT NULL,
+  question_type   ENUM('short_text', 'single_choice', 'multi_choice', 'counter', 'table', 'file_upload') NOT NULL,
   is_mandatory    TINYINT(1)    NOT NULL DEFAULT 0,
   position        INT           NOT NULL DEFAULT 0,
   max_length      INT           NULL,  -- short_text only
@@ -67,6 +67,11 @@ CREATE TABLE IF NOT EXISTS questions (
   max_value       INT           NULL,  -- counter only
   min_rows        INT           NULL,  -- table only
   max_rows        INT           NULL,  -- table only
+  -- Conditional visibility: only shown once depends_on_option_id is picked on
+  -- depends_on_question_id (a single_choice question). Both null = always shown.
+  -- FKs added below, once question_options exists (self-referential + forward reference).
+  depends_on_question_id INT NULL,
+  depends_on_option_id   INT NULL,
   CONSTRAINT fk_questions_section
     FOREIGN KEY (section_id) REFERENCES sections (id) ON DELETE CASCADE,
   KEY idx_questions_order (section_id, position)
@@ -84,6 +89,14 @@ CREATE TABLE IF NOT EXISTS question_options (
     FOREIGN KEY (question_id) REFERENCES questions (id) ON DELETE CASCADE,
   KEY idx_options_order (question_id, position)
 ) ENGINE = InnoDB;
+
+-- questions.depends_on_* FKs, added here since depends_on_option_id needs question_options to
+-- already exist. ON DELETE SET NULL rather than CASCADE: deleting the question/option a field
+-- depends on should fall back to "always visible", not silently delete an unrelated question.
+ALTER TABLE questions ADD CONSTRAINT fk_questions_depends_on_question
+  FOREIGN KEY (depends_on_question_id) REFERENCES questions (id) ON DELETE SET NULL;
+ALTER TABLE questions ADD CONSTRAINT fk_questions_depends_on_option
+  FOREIGN KEY (depends_on_option_id) REFERENCES question_options (id) ON DELETE SET NULL;
 
 -- ------------------------------------------------------------
 -- Column definitions for table-type questions. The respondent fills in one

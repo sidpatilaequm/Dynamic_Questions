@@ -301,6 +301,25 @@ def reorder_sections(
 # --------------------------------------------------------------------
 # Questions
 # --------------------------------------------------------------------
+def _validate_dependency(db: Session, payload: schemas.QuestionIn, process_id: int, question_id: int | None) -> None:
+    """Cross-referential checks check_shape() can't do without a DB session: the dependency
+    question exists, belongs to the same process, is a single_choice (the only type with a
+    fixed, mutually-exclusive answer that "show if X" can key off), isn't this question itself,
+    and the chosen option actually belongs to it."""
+    if payload.depends_on_question_id is None:
+        return
+    dep = db.get(models.Question, payload.depends_on_question_id)
+    if dep is None or dep.section.process_id != process_id:
+        raise bad_request("The question this depends on doesn't exist in this process.")
+    if question_id is not None and dep.id == question_id:
+        raise bad_request("A question can't depend on itself.")
+    if dep.question_type != models.QuestionType.single_choice:
+        raise bad_request('Only a "single choice" question can be depended on — pick the Yes/No (or similar) question this should follow.')
+    option = db.get(models.QuestionOption, payload.depends_on_option_id)
+    if option is None or option.question_id != dep.id:
+        raise bad_request("That option doesn't belong to the question this depends on.")
+
+
 @app.post(
     "/api/sections/{section_id}/questions",
     response_model=schemas.ProcessDetail,
@@ -329,6 +348,7 @@ def create_question(
         payload.check_shape()
     except ValueError as exc:
         raise bad_request(str(exc)) from exc
+    _validate_dependency(db, payload, section.process_id, question_id=None)
 
     question = models.Question(
         section_id=section_id,
@@ -362,6 +382,7 @@ def update_question(
         payload.check_shape()
     except ValueError as exc:
         raise bad_request(str(exc)) from exc
+    _validate_dependency(db, payload, process_id, question_id=question.id)
 
     crud.apply_question_payload(question, payload)
     db.commit()
