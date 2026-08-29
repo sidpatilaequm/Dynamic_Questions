@@ -13,20 +13,22 @@ def _plural(n: int, word: str) -> str:
     return f"{n} {word}{'' if n == 1 else 's'}"
 
 
-def _cell_is_valid(column_type: ColumnType, value: str) -> bool:
+def _cell_is_valid(column: "models.QuestionColumn", value: str) -> bool:
     value = value.strip()
-    if column_type == ColumnType.number:
+    if column.column_type == ColumnType.number:
         try:
             float(value)
             return True
         except ValueError:
             return False
-    if column_type == ColumnType.date:
+    if column.column_type == ColumnType.date:
         try:
             _datetime.date.fromisoformat(value)
             return True
         except ValueError:
             return False
+    if column.column_type == ColumnType.dropdown:
+        return value in {opt.label for opt in column.options}
     return True
 
 
@@ -168,6 +170,10 @@ def apply_question_payload(question: models.Question, payload: schemas.QuestionI
                 column_type=col.column_type,
                 is_required=col.is_required,
                 position=i,
+                options=[
+                    models.QuestionColumnOption(label=opt.label.strip(), position=j)
+                    for j, opt in enumerate(col.options)
+                ] if col.column_type == ColumnType.dropdown else [],
             )
             for i, col in enumerate(payload.columns)
         ]
@@ -278,13 +284,18 @@ def validate_submission(
                 bad_col = next(
                     (
                         c for c in question.columns
-                        if row.get(str(c.id), "").strip() and not _cell_is_valid(c.column_type, row[str(c.id)])
+                        if row.get(str(c.id), "").strip() and not _cell_is_valid(c, row[str(c.id)])
                     ),
                     None,
                 )
                 if bad_col:
-                    kind = "number" if bad_col.column_type == ColumnType.number else "date"
-                    bad_row = f"Row {index + 1}: {bad_col.label} takes a {kind}."
+                    if bad_col.column_type == ColumnType.number:
+                        kind = "takes a number"
+                    elif bad_col.column_type == ColumnType.date:
+                        kind = "takes a date"
+                    else:
+                        kind = "must be one of the listed options"
+                    bad_row = f"Row {index + 1}: {bad_col.label} {kind}."
                     break
             if bad_row:
                 errors[key] = bad_row

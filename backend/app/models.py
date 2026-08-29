@@ -32,6 +32,7 @@ class ColumnType(str, enum.Enum):
     text = "text"
     number = "number"
     date = "date"
+    dropdown = "dropdown"
 
 
 class ProcessStatus(str, enum.Enum):
@@ -161,6 +162,27 @@ class QuestionColumn(Base):
     position: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
     question: Mapped[Question] = relationship(back_populates="columns")
+    options: Mapped[list["QuestionColumnOption"]] = relationship(
+        back_populates="column",
+        cascade="all, delete-orphan",
+        order_by="QuestionColumnOption.position",
+    )
+
+
+class QuestionColumnOption(Base):
+    """Choice list for a `dropdown`-type table column — same shape as QuestionOption,
+    just scoped to one column instead of one question."""
+
+    __tablename__ = "question_column_options"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    column_id: Mapped[int] = mapped_column(
+        ForeignKey("question_columns.id", ondelete="CASCADE"), nullable=False
+    )
+    label: Mapped[str] = mapped_column(String(300), nullable=False)
+    position: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+    column: Mapped[QuestionColumn] = relationship(back_populates="options")
 
 
 class Response(Base):

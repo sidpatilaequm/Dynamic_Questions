@@ -93,12 +93,26 @@ CREATE TABLE IF NOT EXISTS question_columns (
   id            INT AUTO_INCREMENT PRIMARY KEY,
   question_id   INT            NOT NULL,
   label         VARCHAR(300)   NOT NULL,
-  column_type   ENUM('text', 'number', 'date') NOT NULL DEFAULT 'text',
+  column_type   ENUM('text', 'number', 'date', 'dropdown') NOT NULL DEFAULT 'text',
   is_required   TINYINT(1)     NOT NULL DEFAULT 0,
   position      INT            NOT NULL DEFAULT 0,
   CONSTRAINT fk_columns_question
     FOREIGN KEY (question_id) REFERENCES questions (id) ON DELETE CASCADE,
   KEY idx_columns_order (question_id, position)
+) ENGINE = InnoDB;
+
+-- ------------------------------------------------------------
+-- Choices offered by a `dropdown`-type table column. Same shape as
+-- question_options, just scoped to one column instead of one question.
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS question_column_options (
+  id           INT AUTO_INCREMENT PRIMARY KEY,
+  column_id    INT           NOT NULL,
+  label        VARCHAR(300)  NOT NULL,
+  position     INT           NOT NULL DEFAULT 0,
+  CONSTRAINT fk_column_options_column
+    FOREIGN KEY (column_id) REFERENCES question_columns (id) ON DELETE CASCADE,
+  KEY idx_column_options_order (column_id, position)
 ) ENGINE = InnoDB;
 
 -- ------------------------------------------------------------

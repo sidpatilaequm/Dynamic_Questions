@@ -31,6 +31,7 @@ class ColumnIn(BaseModel):
     label: str = Field(min_length=1, max_length=300)
     column_type: ColumnType = ColumnType.text
     is_required: bool = False
+    options: list[OptionIn] = Field(default_factory=list)  # dropdown columns only
 
 
 class ColumnOut(BaseModel):
@@ -41,6 +42,7 @@ class ColumnOut(BaseModel):
     column_type: ColumnType
     is_required: bool
     position: int
+    options: list[OptionOut] = []
 
 
 # --------------------------------------------------------------------
@@ -89,6 +91,16 @@ class QuestionIn(BaseModel):
                 raise ValueError("Two columns have the same heading.")
             if self.min_rows is not None and self.max_rows is not None and self.min_rows > self.max_rows:
                 raise ValueError("The fewest rows cannot be more than the most rows.")
+            for c in self.columns:
+                col_label = c.label.strip()
+                opt_labels = [o.label.strip() for o in c.options]
+                if c.column_type == ColumnType.dropdown:
+                    if len(opt_labels) < 2:
+                        raise ValueError(f'Dropdown column "{col_label}" needs at least two options.')
+                    if len({o.lower() for o in opt_labels}) != len(opt_labels):
+                        raise ValueError(f'Dropdown column "{col_label}" has two options with the same label.')
+                elif opt_labels:
+                    raise ValueError(f'Column "{col_label}" is not a dropdown, so it cannot carry options.')
             return
 
         labels = [o.label.strip() for o in self.options]
