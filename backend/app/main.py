@@ -14,6 +14,14 @@ from sqlalchemy.orm import Session, selectinload
 from . import crud, models, schemas
 from .database import get_db
 
+# Error monitoring (Bugsink, Sentry protocol). Off unless SENTRY_DSN is set in the environment.
+from dotenv import load_dotenv
+load_dotenv()  # .env is not otherwise loaded before this point
+if os.environ.get("SENTRY_DSN"):
+    import sentry_sdk
+    sentry_sdk.init(dsn=os.environ["SENTRY_DSN"], environment="production",
+                    send_default_pii=False, traces_sample_rate=0)
+
 app = FastAPI(
     title="Form Studio API",
     version="1.0.0",
