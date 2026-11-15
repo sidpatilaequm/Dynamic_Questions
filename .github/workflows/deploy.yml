@@ -1,0 +1,45 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy over SSH
+        env:
+          SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/deploy_key ubuntu@$SERVER_HOST '
+            cd ~/aqqum/dynamic_questions &&
+            git pull origin main &&
+            cd backend &&
+            source .venv/bin/activate &&
+            pip install -r requirements.txt &&
+            sudo systemctl restart formstudio
+          '
+
+      # Second environment (aequmindia.online), running alongside the one above until it's
+      # phased in fully.
+      - name: Deploy to second server over SSH
+        env:
+          SSH_KEY: ${{ secrets.SERVER_SSH_KEY_2 }}
+          SERVER_HOST: ${{ secrets.SERVER_HOST_2 }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_KEY" > ~/.ssh/deploy_key_2
+          chmod 600 ~/.ssh/deploy_key_2
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/deploy_key_2 ubuntu@$SERVER_HOST '
+            cd ~/aqqum/dynamic_questions &&
+            git pull origin main &&
+            cd backend &&
+            source .venv/bin/activate &&
+            pip install -r requirements.txt &&
+            sudo systemctl restart formstudio
+          '
